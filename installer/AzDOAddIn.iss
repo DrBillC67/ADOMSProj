@@ -1,11 +1,14 @@
 ; Inno Setup script for AzDO Add-in (MS Project / Azure DevOps integration)
-; Build the solution in Release first, then compile this script with Inno Setup.
+;
+; REQUIRED: Build the solution in Visual Studio (Release | Any CPU) first.
+; Output must exist at: AzDOAddIn\AzDOAddIn\bin\Release\
+; If you compile this script before building, you will get "No files found matching" at line 34.
 
 #define MyAppName "AzDO MS Project Add-in"
 #define MyAppVersion "1.0"
 #define MyAppPublisher "AzDOMSProject"
 #define MyAppURL "https://github.com/ashamrai/AzDOMSProject"
-; Output from building AzDOAddIn.sln in Release (add-in project copies Core and NuGet refs here)
+; Path relative to this script: repo\AzDOAddIn\AzDOAddIn\bin\Release
 #define BuildOutput "..\AzDOAddIn\AzDOAddIn\bin\Release"
 
 [Setup]
@@ -23,22 +26,43 @@ OutputBaseFilename=AzDOAddInSetup
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x86 x64
-ArchitecturesInstallIn64BitMode=x64
+; Allow x86, x64, and Arm64 (e.g. Windows on ARM / Snapdragon) so installer runs on all supported systems
+ArchitecturesAllowed=x86 x64 arm64
+ArchitecturesInstallIn64BitMode=x64 arm64
+; Require Windows 10 or later
+MinVersion=10.0
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-; Add-in, Core, and all dependency DLLs from build output
+; Add-in, Core, and all dependency DLLs from build output (must exist; build solution in Release first)
 Source: "{#BuildOutput}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
 [Registry]
 ; Register add-in for MS Project (per user). LoadBehavior 3 = load at startup.
-; If your build produces a .dll.manifest, set Manifest to that path (file:/// URL).
+; Manifest value is set in [Code] so we can use a proper file:/// URL.
 Root: HKCU; Subkey: "Software\Microsoft\Office\Project\Addins\AzDOAddIn"; ValueType: string; ValueName: "Description"; ValueData: "Azure DevOps Work Items integration"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Microsoft\Office\Project\Addins\AzDOAddIn"; ValueType: string; ValueName: "FriendlyName"; ValueData: "{#MyAppName}"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Microsoft\Office\Project\Addins\AzDOAddIn"; ValueType: dword; ValueName: "LoadBehavior"; ValueData: 3; Flags: uninsdeletekey
+
+[Code]
+const
+  AddInRegKey = 'Software\Microsoft\Office\Project\Addins\AzDOAddIn';
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  AppDir, ManifestUrl: string;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    AppDir := ExpandConstant('{app}');
+    { Build file:/// URL: forward slashes, no backslashes }
+    ManifestUrl := 'file:///' + AppDir + '/AzDOAddIn.dll.manifest';
+    StringChangeEx(ManifestUrl, '\', '/', True);
+    RegWriteStringValue(HKEY_CURRENT_USER, AddInRegKey, 'Manifest', ManifestUrl);
+  end;
+end;
 
 [UninstallDelete]
 Type: dirifempty; Name: "{app}"

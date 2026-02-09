@@ -93,7 +93,7 @@ namespace AzDOAddIn.Core
         {
             var operations = new List<object>();
             foreach (var kv in fields)
-                operations.Add(new { op = "add", path = $"/fields/{kv.Key}", @from = (string)null, value = kv.Value });
+                operations.Add(new { op = "add", path = $"/fields/{kv.Key}", @from = (string?)null, value = kv.Value });
             if (parentId > 0)
                 operations.Add(new { op = "add", path = "/relations/-", value = new { rel = ParentLinkName, url = $"{azDoUrl.TrimEnd('/')}/_apis/wit/workItems/{parentId}" } });
             var body = JsonConvert.SerializeObject(operations);
@@ -126,7 +126,7 @@ namespace AzDOAddIn.Core
 
         public static async Task<WorkItem> UpdateWorkItemAsync(string azDoUrl, string teamProject, string pat, int id, Dictionary<string, string> fields)
         {
-            var operations = fields.Select(kv => new { op = "add", path = $"/fields/{kv.Key}", @from = (string)null, value = kv.Value }).ToList<object>();
+            var operations = fields.Select(kv => new { op = "add", path = $"/fields/{kv.Key}", @from = (string?)null, value = kv.Value }).ToList<object>();
             var body = JsonConvert.SerializeObject(operations);
             var url = $"{azDoUrl.TrimEnd('/')}/{Uri.EscapeDataString(teamProject)}/_apis/wit/workitems/{id}?api-version={ApiVersion}";
             return await InvokeAsync<WorkItem>(new HttpMethod("PATCH"), url, body, pat, "application/json-patch+json").ConfigureAwait(false);

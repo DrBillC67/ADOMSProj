@@ -8,9 +8,9 @@ namespace AzDOAddIn.Core
     public class AzDoApiException : Exception
     {
         public System.Net.HttpStatusCode? StatusCode { get; }
-        public string ResponseBody { get; }
+        public string? ResponseBody { get; }
 
-        public AzDoApiException(string message, System.Net.HttpStatusCode? statusCode = null, string responseBody = null)
+        public AzDoApiException(string message, System.Net.HttpStatusCode? statusCode = null, string? responseBody = null)
             : base(message)
         {
             StatusCode = statusCode;

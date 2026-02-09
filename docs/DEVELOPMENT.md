@@ -33,8 +33,10 @@ AzDOAddIn/
 
 ## Building and running
 
-- **Visual Studio:** Open `AzDOAddIn.sln`, restore NuGet packages, build. Set **AzDOAddIn** as the startup project to run Project with the add-in under the debugger.
-- **Command line:** Use MSBuild or Visual Studio developer prompt, e.g.  
+- **Visual Studio (required for full solution):** Open `AzDOAddIn.sln`, restore NuGet packages, build. Set **AzDOAddIn** as the startup project to run Project with the add-in under the debugger. The add-in project uses VSTO targets that are only available in Visual Studio (Office/SharePoint workload), so **`dotnet build` on the solution will fail** for the add-in—always build the full solution inside Visual Studio.
+- **Command line:** You can build only the Core library from the repo root:  
+  `dotnet build AzDOAddIn\AzDOAddIn.Core\AzDOAddIn.Core.csproj -c Release`  
+  To build the entire solution from the command line, use MSBuild from a **Visual Studio Developer Command Prompt** (so VSTO targets are available), e.g.  
   `msbuild AzDOAddIn.sln /p:Configuration=Release /p:Platform="Any CPU"`
 
 ---
