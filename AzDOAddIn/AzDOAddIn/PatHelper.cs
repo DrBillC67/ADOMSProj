@@ -1,181 +1,216 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using System.Xml.Serialization;
+using CredentialManagement;
 
 namespace AzDOAddIn
 {
+    /// <summary>
+    /// Stores and retrieves Azure DevOps PATs using Windows Credential Manager.
+    /// </summary>
     internal static class PatHelper
     {
-        private static string GetKey()
-        {
-            string mName = Environment.MachineName;
-            string key = "";
+        private const string CredentialTargetPrefix = "AzDOAddIn:";
 
-            for (int i = 0; i < 32; i++)
-            {
-                double code = 0;
-
-                if (i < mName.Length) code = char.ConvertToUtf32(mName, i);
-                else code = i;
-
-                key += code.ToString();
-            }
-
-            return key.Substring(0, 32);
-        }
+        private static string CredentialTarget(string url) => CredentialTargetPrefix + (url ?? "").Trim().TrimEnd('/');
 
         internal static string GetPat(string url)
         {
-            if (Properties.Settings.Default.PATManager == "") return "";
+            if (string.IsNullOrWhiteSpace(url)) return "";
 
-            Pats pats = DecryptPats();
+            try
+            {
+                using (var cred = new Credential())
+                {
+                    cred.Target = CredentialTarget(url);
+                    cred.Type = CredentialType.Generic;
+                    if (cred.Load())
+                        return cred.Password ?? "";
+                }
+            }
+            catch
+            {
+                // Fallback: try migrating from legacy encrypted storage (one-time)
+                return MigrateFromLegacyStorage(url);
+            }
 
-            foreach (var pat in pats.Dictionary) if (pat.Key == url) return pat.Value;
-
-            return "";
+            return MigrateFromLegacyStorage(url);
         }
 
-        private static Pats DecryptPats()
+        /// <summary>
+        /// One-time migration from old PATManager (encrypted in user settings) to Credential Manager.
+        /// </summary>
+        private static string MigrateFromLegacyStorage(string url)
         {
-            string key = GetKey();
+            try
+            {
+                if (string.IsNullOrEmpty(Properties.Settings.Default.PATManager))
+                    return "";
 
-            XmlSerializer serializer = new XmlSerializer(typeof(Pats));
+                var legacy = LegacyPatStorage.DecryptAndGet(url);
+                if (string.IsNullOrEmpty(legacy)) return "";
 
-            string decstr = DecryptString(key, Properties.Settings.Default.PATManager);
-
-            StringReader reader = new StringReader(decstr);
-
-            Pats pats = (Pats)serializer.Deserialize(reader);
-            return pats;
+                SetPat(url, legacy);
+                LegacyPatStorage.RemoveUrl(url);
+                return legacy;
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         internal static List<string> GetStoredUrls()
         {
-            List<string> listUrls = new List<string>();
-
-            if (Properties.Settings.Default.PATManager != "")
-                        {
-                Pats pats = DecryptPats();
-
-                if (pats.Dictionary.Count > 0)
-                    foreach (var dict in pats.Dictionary) listUrls.Add(dict.Key);
-            }
-
-            return listUrls;
-        }
-
-        internal static string SetPat(string url, string pat)
-        {
-            string key = GetKey();
-
-            Pats pats = null;
-
-            if (Properties.Settings.Default.PATManager != "")
+            var list = new List<string>();
+            try
             {
-                pats = DecryptPats();
+                var stored = Properties.Settings.Default.StoredUrls;
+                if (string.IsNullOrEmpty(stored)) return list;
 
-                bool urlExist = false;
-
-                for (int i = 0; i < pats.Dictionary.Count; i++)
+                foreach (var u in stored.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    if (pats.Dictionary[i].Key == url)
-                    {
-                        urlExist = true;
-
-                        if (pats.Dictionary[i].Value != pat)
-                        {
-                            pats.Dictionary.RemoveAt(i);
-
-                            pats.Dictionary.Add(new KeyValuePair<string, string>() { Key = url, Value = pat });
-
-                            break;
-                        }
-                    }
-                }
-
-                if (!urlExist)
-                    pats.Dictionary.Add(new KeyValuePair<string, string>() { Key = url, Value = pat });
-            }
-            else
-            {
-                pats = new Pats();
-
-                pats.Dictionary = new List<KeyValuePair<string, string>>();
-                pats.Dictionary.Add(new KeyValuePair<string, string>() { Key = url, Value = pat });                
-            }
-
-            XmlSerializer serializer = new XmlSerializer(typeof(Pats));
-
-            string PatsStr = "";
-
-            using (StringWriter writer = new StringWriter())
-            {
-                serializer.Serialize(writer, pats);
-                PatsStr = writer.ToString();
-            }
-
-            Properties.Settings.Default.PATManager = EncryptString(key, PatsStr);            
-
-            Properties.Settings.Default.Save();
-
-            return "";
-        }
-
-        private static string EncryptString(string key, string plainText)
-        {
-            byte[] iv = new byte[16];
-            byte[] array;
-
-            using (Aes aes = Aes.Create())
-            {
-                aes.Key = Encoding.UTF8.GetBytes(key);
-                aes.IV = iv;
-
-                ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
-
-                using (MemoryStream memoryStream = new MemoryStream())
-                {
-                    using (CryptoStream cryptoStream = new CryptoStream((Stream)memoryStream, encryptor, CryptoStreamMode.Write))
-                    {
-                        using (StreamWriter streamWriter = new StreamWriter((Stream)cryptoStream))
-                        {
-                            streamWriter.Write(plainText);
-                        }
-
-                        array = memoryStream.ToArray();
-                    }
+                    var trimmed = u.Trim();
+                    if (trimmed.Length > 0 && !list.Contains(trimmed))
+                        list.Add(trimmed);
                 }
             }
+            catch { }
 
-            return Convert.ToBase64String(array);
+            return list;
         }
 
-        private static string DecryptString(string key, string cipherText)
+        internal static void SetPat(string url, string pat)
         {
-            byte[] iv = new byte[16];
-            byte[] buffer = Convert.FromBase64String(cipherText);
+            if (string.IsNullOrWhiteSpace(url)) return;
 
-            using (Aes aes = Aes.Create())
+            var target = CredentialTarget(url);
+
+            if (string.IsNullOrEmpty(pat))
             {
-                aes.Key = Encoding.UTF8.GetBytes(key);
-                aes.IV = iv;
-                ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
-
-                using (MemoryStream memoryStream = new MemoryStream(buffer))
+                try
                 {
-                    using (CryptoStream cryptoStream = new CryptoStream((Stream)memoryStream, decryptor, CryptoStreamMode.Read))
-                    {
-                        using (StreamReader streamReader = new StreamReader((Stream)cryptoStream))
-                        {
-                            return streamReader.ReadToEnd();
-                        }
-                    }
+                    using (var cred = new Credential { Target = target })
+                        cred.Delete();
+                }
+                catch { }
+                RemoveStoredUrl(url);
+                return;
+            }
+
+            try
+            {
+                using (var cred = new Credential())
+                {
+                    cred.Target = target;
+                    cred.Username = url;
+                    cred.Password = pat;
+                    cred.Type = CredentialType.Generic;
+                    cred.PersistanceType = PersistanceType.LocalComputer;
+                    cred.Save();
+                }
+
+                AddStoredUrl(url);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Failed to store PAT in Windows Credential Manager.", ex);
+            }
+        }
+
+        private static void AddStoredUrl(string url)
+        {
+            var list = GetStoredUrls();
+            var normalized = (url ?? "").Trim().TrimEnd('/');
+            if (string.IsNullOrEmpty(normalized) || list.Contains(normalized)) return;
+            list.Add(normalized);
+            SaveStoredUrls(list);
+        }
+
+        private static void RemoveStoredUrl(string url)
+        {
+            var list = GetStoredUrls();
+            var normalized = (url ?? "").Trim().TrimEnd('/');
+            list.RemoveAll(s => string.Equals(s, normalized, StringComparison.OrdinalIgnoreCase));
+            SaveStoredUrls(list);
+        }
+
+        private static void SaveStoredUrls(List<string> urls)
+        {
+            try
+            {
+                Properties.Settings.Default.StoredUrls = string.Join(";", urls ?? new List<string>());
+                Properties.Settings.Default.Save();
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Legacy encrypted PAT storage (for one-time migration only).
+        /// </summary>
+        private static class LegacyPatStorage
+        {
+            public static string DecryptAndGet(string url)
+            {
+                if (string.IsNullOrEmpty(Properties.Settings.Default.PATManager)) return "";
+                var pats = DecryptPats();
+                if (pats?.Dictionary == null) return "";
+                foreach (var kv in pats.Dictionary)
+                    if (string.Equals(kv.Key, url, StringComparison.OrdinalIgnoreCase))
+                        return kv.Value ?? "";
+                return "";
+            }
+
+            public static void RemoveUrl(string url)
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(Properties.Settings.Default.PATManager)) return;
+                    var pats = DecryptPats();
+                    if (pats?.Dictionary == null) return;
+                    pats.Dictionary.RemoveAll(kv => string.Equals(kv.Key, url, StringComparison.OrdinalIgnoreCase));
+                    Properties.Settings.Default.PATManager = "";
+                    Properties.Settings.Default.Save();
+                }
+                catch { }
+            }
+
+            private static Pats DecryptPats()
+            {
+                try
+                {
+                    var key = GetKey();
+                    var decstr = DecryptString(key, Properties.Settings.Default.PATManager);
+                    if (string.IsNullOrEmpty(decstr)) return null;
+                    var serializer = new System.Xml.Serialization.XmlSerializer(typeof(Pats));
+                    using (var reader = new System.IO.StringReader(decstr))
+                        return (Pats)serializer.Deserialize(reader);
+                }
+                catch { return null; }
+            }
+
+            private static string GetKey()
+            {
+                var mName = Environment.MachineName ?? "";
+                var key = "";
+                for (int i = 0; i < 32; i++)
+                    key += (i < mName.Length ? char.ConvertToUtf32(mName, i) : i).ToString();
+                return key.Length >= 32 ? key.Substring(0, 32) : key.PadRight(32).Substring(0, 32);
+            }
+
+            private static string DecryptString(string key, string cipherText)
+            {
+                if (string.IsNullOrEmpty(cipherText)) return "";
+                var iv = new byte[16];
+                var buffer = Convert.FromBase64String(cipherText);
+                using (var aes = System.Security.Cryptography.Aes.Create())
+                {
+                    aes.Key = System.Text.Encoding.UTF8.GetBytes(key.Length >= 32 ? key.Substring(0, 32) : key.PadRight(32).Substring(0, 32));
+                    aes.IV = iv;
+                    using (var decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
+                    using (var ms = new System.IO.MemoryStream(buffer))
+                    using (var cs = new System.Security.Cryptography.CryptoStream(ms, decryptor, System.Security.Cryptography.CryptoStreamMode.Read))
+                    using (var sr = new System.IO.StreamReader(cs))
+                        return sr.ReadToEnd();
                 }
             }
         }
@@ -184,18 +219,15 @@ namespace AzDOAddIn
     [Serializable]
     public class Pats
     {
-        [XmlElement("StringDictionary")]
-        public List<KeyValuePair<string, string>> Dictionary;
+        [System.Xml.Serialization.XmlElement("StringDictionary")]
+        public List<KeyValuePair<string, string>> Dictionary { get; set; }
     }
 
     [Serializable]
-    [XmlType(TypeName = "StringDictionary")]
+    [System.Xml.Serialization.XmlType(TypeName = "StringDictionary")]
     public struct KeyValuePair<K, V>
     {
-        public K Key
-        { get; set; }
-
-        public V Value
-        { get; set; }
+        public K Key { get; set; }
+        public V Value { get; set; }
     }
 }

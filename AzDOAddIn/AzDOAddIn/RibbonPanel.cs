@@ -1,7 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 using AzDOAddIn.Forms;
 using Microsoft.Office.Tools.Ribbon;
 
@@ -11,12 +13,11 @@ namespace AzDOAddIn
     {
         private void RibbonPanel_Load(object sender, RibbonUIEventArgs e)
         {
-
         }
 
-        private void btn_LinkToTeamProject_Click(object sender, RibbonControlEventArgs e)
+        private async void btn_LinkToTeamProject_Click(object sender, RibbonControlEventArgs e)
         {
-            ProjectOperations.LinkToTeamProject();
+            await ProjectOperations.LinkToTeamProjectAsync().ConfigureAwait(true);
         }
 
         private void btn_AddColumns_Click(object sender, RibbonControlEventArgs e)
@@ -24,42 +25,42 @@ namespace AzDOAddIn
             ProjectOperations.UpdateView();
         }
 
-        private void btn_UpdatePlan_Click(object sender, RibbonControlEventArgs e)
+        private async void btn_UpdatePlan_Click(object sender, RibbonControlEventArgs e)
         {
-            ProjectOperations.UpdateProjectPlan();
+            await ProjectOperations.UpdateProjectPlanAsync().ConfigureAwait(true);
         }
 
-        private void btnGetWorkItems_Click(object sender, RibbonControlEventArgs e)
+        private async void btnGetWorkItems_Click(object sender, RibbonControlEventArgs e)
         {
-            Forms.GetWorkItemsForm getWorkItemsForm = new Forms.GetWorkItemsForm();
-            if (getWorkItemsForm.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            var getWorkItemsForm = new Forms.GetWorkItemsForm();
+            if (getWorkItemsForm.ShowDialog() == DialogResult.OK)
             {
-                ProjectOperations.AddWorkItemsToPlan(getWorkItemsForm.WiIds);
+                await ProjectOperations.AddWorkItemsToPlanAsync(getWorkItemsForm.WiIds).ConfigureAwait(true);
             }
         }
 
-        private void btnImportChilds_Click(object sender, RibbonControlEventArgs e)
+        private async void btnImportChilds_Click(object sender, RibbonControlEventArgs e)
         {
-            ProjectOperations.ImportChilds();
+            await ProjectOperations.ImportChildsAsync().ConfigureAwait(true);
         }
 
-        private void btn_PublishWorkItems_Click(object sender, RibbonControlEventArgs e)
+        private async void btn_PublishWorkItems_Click(object sender, RibbonControlEventArgs e)
         {
-            ProjectOperations.PublishProjectPlan();
+            await ProjectOperations.PublishProjectPlanAsync().ConfigureAwait(true);
         }
 
-        private void btn_ImportTeamMembers_Click(object sender, RibbonControlEventArgs e)
+        private async void btn_ImportTeamMembers_Click(object sender, RibbonControlEventArgs e)
         {
-            ProjectOperations.ImportTeamMembers();
+            await ProjectOperations.ImportTeamMembersAsync().ConfigureAwait(true);
         }
 
         private void btn_Settings_Click(object sender, RibbonControlEventArgs e)
         {
-            Forms.SettingsForm settingsForm = new Forms.SettingsForm();
+            var settingsForm = new Forms.SettingsForm();
 
             settingsForm.UpdateSettingsValues(ProjectOperations.GetPlanSettings(), ProjectOperations.GetOperationalSettings());
 
-            if (settingsForm.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            if (settingsForm.ShowDialog() == DialogResult.OK)
             {
                 ProjectOperations.SavePlanningSettings(settingsForm.useSprintStartDate);
                 ProjectOperations.SaveOperationalSettings(settingsForm.savePlan, settingsForm.workItemTag);

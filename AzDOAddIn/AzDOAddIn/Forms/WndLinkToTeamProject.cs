@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -7,20 +7,21 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using AzDOAddIn.Core;
 
 namespace AzDOAddIn.Forms
 {
     public partial class WndLinkToTeamProject : Form
     {
-        public string Url { get { return cmdAzDoUrl.Text; } }
-        public string TeamProject { get { return cmdBox_TeamProjects.Text; } }
-        public string PAT { get { return txtBox_PAT.Text; } set { txtBox_PAT.Text = value; } }
+        public string Url => cmdAzDoUrl.Text;
+        public string TeamProject => cmdBox_TeamProjects.Text;
+        public string PAT { get => txtBox_PAT.Text; set => txtBox_PAT.Text = value; }
 
         public WndLinkToTeamProject()
         {
             InitializeComponent();
 
-            List<string> azdoUrls = PatHelper.GetStoredUrls();
+            var azdoUrls = PatHelper.GetStoredUrls();
 
             if (azdoUrls.Count > 0)
                 foreach (string url in azdoUrls) cmdAzDoUrl.Items.Add(url);
@@ -28,19 +29,20 @@ namespace AzDOAddIn.Forms
 
         private void btn_OK_Click(object sender, EventArgs e)
         {
-            this.DialogResult = DialogResult.OK;
-            this.Close();
+            DialogResult = DialogResult.OK;
+            Close();
         }
 
-        private void btn_GetTeamProjects_Click(object sender, EventArgs e)
+        private async void btn_GetTeamProjects_Click(object sender, EventArgs e)
         {
             try
             {
-                var projects = AzDORestApiHelper.GetTeamProjects(Url, PAT);
+                var projects = await AzDoRestClient.GetTeamProjectsAsync(Url, PAT).ConfigureAwait(true);
 
                 cmdBox_TeamProjects.Items.Clear();
 
-                foreach (var project in projects.TeamProjects) cmdBox_TeamProjects.Items.Add(project.name);
+                foreach (var project in projects.TeamProjects)
+                    cmdBox_TeamProjects.Items.Add(project.name);
 
                 if (cmdBox_TeamProjects.Items.Count > 0)
                 {
@@ -48,7 +50,7 @@ namespace AzDOAddIn.Forms
                     txtBox_PAT.Enabled = false;
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -60,21 +62,21 @@ namespace AzDOAddIn.Forms
                 PAT = PatHelper.GetPat(Url);
         }
 
-        private void btn_UpdatePAT_Click(object sender, EventArgs e)
+        private async void btn_UpdatePAT_Click(object sender, EventArgs e)
         {
             try
             {
                 if (Url.Length == 0) return;
 
-                var projects = AzDORestApiHelper.GetTeamProjects(Url, PAT);
+                var projects = await AzDoRestClient.GetTeamProjectsAsync(Url, PAT).ConfigureAwait(true);
 
                 if (projects.count > 0)
                 {
-                    this.DialogResult = DialogResult.Yes;
-                    this.Close();
+                    DialogResult = DialogResult.Yes;
+                    Close();
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
